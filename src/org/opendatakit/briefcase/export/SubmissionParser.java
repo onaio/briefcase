@@ -126,6 +126,7 @@ public class SubmissionParser {
    * @see #decrypt(Submission, SubmissionExportErrorCallback)
    */
   public static Optional<Submission> parseSubmission(Path path, boolean isEncrypted, Optional<PrivateKey> privateKey, SubmissionExportErrorCallback onError) {
+    log.info("Working on: {}", path);
     Path workingDir = isEncrypted ? createTempDirectory("briefcase") : path.getParent();
     return parse(path, onError).flatMap(document -> {
       XmlElement root = XmlElement.of(document);
@@ -145,11 +146,16 @@ public class SubmissionParser {
       ).map((pk, es) -> decrypt(signatureDecrypter(pk), decodeBase64(es)));
 
       Submission submission = Submission.notValidated(path, workingDir, root, metaData, cipherFactory, signature);
-      return isEncrypted
-          // If it's encrypted, validate the parsed contents with the attached signature
-          ? decrypt(submission, onError).map(s -> s.copy(ValidationStatus.of(isValid(submission, s))))
-          // Return the original submission otherwise
-          : Optional.of(submission);
+      try {
+        return isEncrypted
+            // If it's encrypted, validate the parsed contents with the attached signature
+            ? decrypt(submission, onError).map(s -> s.copy(ValidationStatus.of(isValid(submission, s))))
+            // Return the original submission otherwise
+            : Optional.of(submission);
+      } catch (Exception e) {
+        log.info("Failed to parse: {}", path);
+        return Optional.of(submission);
+      }
     });
   }
 
@@ -159,7 +165,9 @@ public class SubmissionParser {
       return parseAttribute(isr, "submissionDate")
           .map(Iso8601Helpers::parseDateTime);
     } catch (IOException e) {
-      throw new CryptoException("Can't decrypt file", e);
+      // throw new CryptoException("Can't decrypt file", e);
+      log.error("Can't parse submission: {}", path);
+      return null;
     }
   }
 
